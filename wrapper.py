@@ -150,6 +150,26 @@ def get_F(kp1, kp2, matches):
 	return F
 
 
+def findEssentialMatrix(F, K):
+	E = np.matmul(K.T, np.matmul(F, K))
+	U, S, Vh = np.linalg.svd(E)
+	E = np.matmul(U, np.matmul(np.identity(3), Vh))
+	return E
+
+
+def findCameraPose(E):
+	U, D, Vt = np.linalg.svd(E)
+	W = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
+	C1 = U[:, 2]
+	R1 = np.matmul(U, np.matmul(W, Vt))
+	C2 = -C1
+	R2 = R1
+	C3 = C1
+	R3 = np.matmul(U, np.matmul(W.T, Vt))
+	C4 = C2
+	R4 = R3
+	return np.array([[C1, R1], [C2, R2], [C3, R3], [C4, R4]])
+
 def main():
 	cur_path = os.path.dirname(os.path.abspath(__file__))
 	img_path = os.path.join(cur_path, 'stereo/centre')
@@ -157,7 +177,14 @@ def main():
 	count = 0
 
 	# Read camera parametres
-	fx, fy, cx, cy, G_camera_image, LUT = ReadCameraModel('./model') 
+	fx, fy, cx, cy, G_camera_image, LUT = ReadCameraModel('./model')
+	
+	K = np.zeros((3, 3))
+	K[0][0] = fx
+	K[0][2] = cx
+	K[1][1] = fy
+	K[1][2] = cy
+	K[2][2] = 1
 
 	prev_frame = []
 	for name in sorted(os.listdir(img_path)):
@@ -173,6 +200,10 @@ def main():
 		kp1, kp2, matches = get_feature_matches(prev_frame, frame)
 
 		F = get_F(kp1, kp2, matches)
+		
+		E = findEssentialMatrix(F, K)
+		
+		camera_poses = findCameraPose(E)
 
 		count += 1 
 
