@@ -77,9 +77,8 @@ def get_F_util(points):
 
 	f = Vh[-1,:]
 	F = np.reshape(f, (3,3)).transpose()
-	# print(F)
-	# print(np.linalg.matrix_rank(F))
 
+	# Correct rank of F
 	U, S, Vh = np.linalg.svd(F)
 	S_ = np.eye(3)
 	for i in range(3):
@@ -154,6 +153,16 @@ def findEssentialMatrix(F, K):
 	E = np.matmul(K.T, np.matmul(F, K))
 	U, S, Vh = np.linalg.svd(E)
 	E = np.matmul(U, np.matmul(np.identity(3), Vh))
+
+	# Correct rank of E
+	U, S, Vh = np.linalg.svd(E)
+	S_ = np.eye(3)
+	for i in range(3):
+		S_[i, i] = S[i]
+	S_[2, 2] = 0
+
+	E = np.matmul(U, np.matmul(S_, Vh))
+
 	return E
 
 
@@ -168,7 +177,25 @@ def findCameraPose(E):
 	R3 = np.matmul(U, np.matmul(W.T, Vt))
 	C4 = C2
 	R4 = R3
-	return np.array([[C1, R1], [C2, R2], [C3, R3], [C4, R4]])
+
+	if np.linalg.det(R1) < 0:
+		R1 = -R1
+		C1 = -C1
+
+	if np.linalg.det(R2) < 0:
+		R2 = -R2
+		C2 = -C2
+
+	if np.linalg.det(R3) < 0:
+		R3 = -R3
+		C3 = -C3
+
+	if np.linalg.det(R4) < 0:
+		R4 = -R4
+		C4 = -C4	
+
+
+	return [[C1, R1], [C2, R2], [C3, R3], [C4, R4]]
 
 def main():
 	cur_path = os.path.dirname(os.path.abspath(__file__))
