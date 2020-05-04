@@ -134,7 +134,7 @@ def get_F(kp1, kp2, matches):
 			max_in = inliers.shape[0]
 			F_ = F
 
-	print("max inliers", max_inliers.shape)
+	# print("max inliers", max_inliers.shape)
 
 	points = []
 	# Recompute F with all the inliers
@@ -146,7 +146,7 @@ def get_F(kp1, kp2, matches):
 	points = np.asarray(points)
 	F = get_F_util(points)
 
-	return F
+	return F,points
 
 
 def findEssentialMatrix(F, K):
@@ -193,9 +193,119 @@ def findCameraPose(E):
 	if np.linalg.det(R4) < 0:
 		R4 = -R4
 		C4 = -C4	
+	C1 = C1.reshape(-1,1)
+	C2 = C2.reshape(-1,1)
+	C3 = C3.reshape(-1,1)
+	C4 = C4.reshape(-1,1)
+
+	poses = []
+	P1 = np.concatenate((R1,C1),axis = 1)
+	poses.append(P1)
+	P2 = np.concatenate((R2,C2),axis = 1)
+	poses.append(P2)
+	P3 = np.concatenate((R3,C3),axis = 1)
+	poses.append(P3)
+	P4 = np.concatenate((R4,C4),axis = 1)
+	poses.append(P4)
+
+	# print(R1)
+	# print(C1)
+	# print(P1)
+	poses = np.asarray(poses)
+	return poses
+
+	# return [[C1, R1], [C2, R2], [C3, R3], [C4, R4]]
+def cross(u):
+    a1=u[0][0]
+    a2=u[1][0]
+    a3=u[2][0]
+    # print(a)
+    return np.array([[0,-a3,a2],[a3,0,-a1],[-a2,a1,0]])
+
+def linear_triangulation(K,P1,P2,points):
+	# print(points[0])
+	pt1 = np.asarray([points[0], points[1],1]).reshape(-1,1)
+	pt2 = np.asarray([points[2], points[3],1]).reshape(-1,1)
+	# print(pt1)
+
+	p1 = np.matmul(np.linalg.inv(K),pt1)
+	p2 = np.matmul(np.linalg.inv(K),pt2)
+
+	cross_1 = cross(p1)
+	cross_2 = cross(p2)
+
+	P1 = np.concatenate((P1[:,:3], -np.matmul(P1[:,:3],P1[:,3].reshape(-1,1))),axis=1)
+	P2 = np.concatenate((P2[:,:3], -np.matmul(P2[:,:3],P2[:,3].reshape(-1,1))),axis=1)
+
+	r1 = np.matmul(cross_1,P1)
+	r2 = np.matmul(cross_2,P2)
+	# print(pose1)
+	# print(pose2)
+
+	A = np.concatenate((r1,r2),axis=0)
+	# print(A.shape)
+	U,S,Vh = np.linalg.svd(A)
+	X = Vh[-1,:]
+	# print(X)
+	X = X/X[3]
+	return X
 
 
-	return [[C1, R1], [C2, R2], [C3, R3], [C4, R4]]
+def get_correct_pose(points,camera_poses,K):
+	P1 = np.array([[1,0,0,0],
+                   [0,1,0,0],
+                   [0,0,1,0]])
+	# print(P0)
+	pts_dict = {}
+	# print(points)
+	# print(points.shape)
+	# print(camera_poses[0].shape)
+
+	for i in range(4):
+		X = []
+		for j in range(points.shape[0]):
+			pt = linear_triangulation(K,P1,camera_poses[i],points[j])
+			X.append(pt)
+
+		# print(len(X))
+		pts_dict.update({i:X})
+	# print(len(pts_dict))
+
+	# print(len(pts_dict[0]))
+	max = 0
+
+	for i in range(4):
+		print(i)
+		P = camera_poses[i]
+
+		# print(len(pts_dict[i]))
+		# print("P", P)
+		r3 = P[2,0:3]
+		r3 = np.reshape(r3,(1,3))
+		# print("r3", r3.shape)
+
+		C = P[:,3]
+		C = np.reshape(C,(3,1))
+		# print(C.shape)
+
+		pts_list = np.asarray(pts_dict[i])
+		# print(pts_list.shape)
+		pts_list = pts_list[:,0:3].T
+		# print(pts_list.shape)
+
+		Z = np.matmul(r3,np.subtract(pts_list,C))
+		# print("Z", Z.shape)
+		Z = Z>0
+		_,pos = np.where(Z==True)
+		print("Z", pos.shape[0], i)
+		if max < pos.shape[0]:
+			final_pose = P
+			max = pos.shape[0]
+
+	return final_pose
+
+
+
 
 def main():
 	cur_path = os.path.dirname(os.path.abspath(__file__))
@@ -215,7 +325,7 @@ def main():
 
 	prev_frame = []
 	for name in sorted(os.listdir(img_path)):
-		print(count)
+		print("frame", count)
 		frame = preprocess_data(img_path, name, LUT)
 		if count == 0:
 			prev_frame = frame
@@ -226,16 +336,21 @@ def main():
 
 		kp1, kp2, matches = get_feature_matches(prev_frame, frame)
 
-		F = get_F(kp1, kp2, matches)
+		F,points = get_F(kp1, kp2, matches)
 		
 		E = findEssentialMatrix(F, K)
 		
 		camera_poses = findCameraPose(E)
 
+		final_pose = get_correct_pose(points,camera_poses,K)
+
+		print("final_pose", final_pose)
+		
 		count += 1 
 
 		if count == 6:
 			break
+
 		# images.append(un_im)
 
 
