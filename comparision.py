@@ -14,9 +14,15 @@ def preprocess_data(img_path, name, LUT):
 	im = cv2.imread(os.path.join(img_path, name), 0)
 	BGR_im = cv2.cvtColor(im, cv2.COLOR_BayerGR2BGR)
 	un_im = UndistortImage(BGR_im, LUT)
-	h, w = im.shape
-	dim = (int(0.6*w), int(0.6*h))
-	un_im = cv2.resize(un_im, dim)
+	un_im = un_im[200:650, :]
+
+	# cv2.imshow("image", un_im)
+	# if cv2.waitKey(0) & 0xff == 27:
+	# 	cv2.destroyAllWindows()
+
+	# h, w = im.shape
+	# dim = (int(0.6*w), int(0.6*h))
+	# un_im = cv2.resize(un_im, dim)
 
 	return un_im
 
@@ -29,13 +35,56 @@ def get_feature_matches(img1, img2):
 	kp1, des1 = orb.detectAndCompute(img1,None)
 	kp2, des2 = orb.detectAndCompute(img2,None)
 
-	bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+	# bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
 
-	# Match descriptors.
-	matches = bf.match(des1,des2)
+	# # Match descriptors.
+	# matches = bf.match(des1,des2)
+	
+	# FLANN_INDEX_LSH = 6
+
+	# index_params= dict(algorithm = FLANN_INDEX_LSH,
+	# 				table_number = 6, # 12
+	# 				key_size = 12,     # 20
+	# 				multi_probe_level = 1) #2
+
+	# search_params = dict(checks=50)   # or pass empty dictionary
+
+	# flann = cv2.FlannBasedMatcher(index_params,search_params)
+
+	# matches1 = flann.knnMatch(des1,des2,k=2)
+
+	# # bf = cv2.BFMatcher()
+	# # matches1 = bf.knnMatch(des1,des2, k=2)
+
+	# # Apply ratio test
+	# good = []
+	# for mt in matches1:
+	# 	if len(mt) == 2:
+	# 		m = mt[0]
+	# 		n = mt[1]
+	# 	else:
+	# 		continue
+
+	# 	if m.distance < n.distance:
+	# 		good.append(m)
+
+	# matches = good
+
+	bf = cv2.BFMatcher()
+	matches1 = bf.knnMatch(des1,des2, k=2)
+
+	# Apply ratio test
+	good = []
+	for m,n in matches1:
+	    if m.distance < 0.5*n.distance:
+	        good.append(m)
+
+	matches = good
 
 	# Sort them in the order of their distance.
 	matches = sorted(matches, key = lambda x:x.distance)
+	# if len(matches) > 100:
+	# 	matches = matches[0:100]
 
 	if len(matches) <= 8:
 		print("Very few matches found. Aborting!!!")
@@ -84,7 +133,7 @@ def get_F_util(points):
 
 def get_inliers(kp1, kp2, matches, F):
 	inliers = []
-	err_thresh = 0.05
+	err_thresh = 0.01
 
 	for m in matches:
 		p = get_point(kp1, kp2, m)
@@ -119,13 +168,15 @@ def get_F(kp1, kp2, matches):
 
 		F = get_F_util(points)
 		inliers = get_inliers(kp1, kp2, matches, F)
+
+		# print("xxxxxxxxxxxxxx", inliers.shape)
 		
 		if inliers.shape[0] > max_in:
 			max_inliers = inliers
 			max_in = inliers.shape[0]
 			F_ = F
 
-	# print("max inliers", max_inliers.shape)
+	print("max inliers", max_in)
 
 	points = []
 	# Recompute F with all the inliers
@@ -149,7 +200,7 @@ def findEssentialMatrix(F, K):
 	U, S, Vh = np.linalg.svd(E)
 	S_ = np.eye(3)
 	for i in range(3):
-		S_[i, i] = S[i]
+		S_[i, i] = 1
 	S_[2, 2] = 0
 
 	E = np.matmul(U, np.matmul(S_, Vh))
@@ -239,8 +290,8 @@ def main():
 	fig = plt.figure()
 	ax = fig.add_subplot(111)
 	# ax = fig.add_subplot(111, projection='3d')
-	ax.set_xlim(-40,40)
-	ax.set_ylim(-40,40)
+	# ax.set_xlim(-100,100)
+	# ax.set_ylim(-100,100)
 	# ax.set_zlim(-100,100)
 	xs = []
 	ys = []
@@ -248,9 +299,9 @@ def main():
 	for name in sorted(os.listdir(img_path)):
 		print(count)
 		frame = preprocess_data(img_path, name, LUT)
-		# cv2.imshow("frame", frame)
-		# cv2.waitKey(1)
-		if count == 0:
+		cv2.imshow("frame", frame)
+		cv2.waitKey(1)
+		if count < 20:
 			prev_frame = frame
 			count += 1
 			continue
@@ -259,7 +310,7 @@ def main():
 
 		kp1, kp2, matches = get_feature_matches(prev_frame, frame)
 
-		F, inliers = get_F(kp1, kp2, matches)
+		# F, inliers = get_F(kp1, kp2, matches)
 
 		pts1 = []
 		pts2 = []
@@ -304,27 +355,27 @@ def main():
 		# # plt.subplot(122),plt.imshow(img3)
 		# # plt.show()
 		
-		E = findEssentialMatrix(F, K)
+		# E = findEssentialMatrix(F, K)
 
 		E_cv, mask = cv2.findEssentialMat(pts1, pts2, K, cv2.RANSAC)
 
 		# print(E)
 		# print(E_cv)
 		
-		camera_poses = findCameraPose(E)
+		# camera_poses = findCameraPose(E)
 
 		# print(camera_poses)
 
-		points1 = []
-		points2 = []
-		for m in matches:
-			points1.append(kp1[m.queryIdx].pt)
-			points2.append(kp2[m.trainIdx].pt)
+		# points1 = []
+		# points2 = []
+		# for m in matches:
+		# 	points1.append(kp1[m.queryIdx].pt)
+		# 	points2.append(kp2[m.trainIdx].pt)
 
-		points1 = np.int32(points1)
-		points2 = np.int32(points2)
+		# points1 = np.int32(points1)
+		# points2 = np.int32(points2)
 
-		num, R, t, mask = cv2.recoverPose(E_cv, points1, points2, K)
+		num, R, t, mask = cv2.recoverPose(E_cv, pts1, pts2, K)
 
 		# print("R:: ", R)
 		# print("t:: ", t)
@@ -361,14 +412,17 @@ def main():
 		# t_prev = t
 
 		T_prev = T
+		prev_frame = frame
 
 		# ax.plot([X[0]],[X[1]], [X[2]],'o') 
 
 		ax.scatter(X[0], X[2], s=1, marker='o', color='b')
 		plt.pause(0.01)
 
-		if count == 1000:
-			break
+		plt.savefig('Output/frame%03d.png' % count)
+
+		# if count == 1000:
+		# 	break
 		# images.append(un_im)
 
 	# print(xs)
