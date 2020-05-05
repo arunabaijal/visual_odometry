@@ -5,58 +5,89 @@ import numpy as np
 from copy import deepcopy
 from ReadCameraModel import ReadCameraModel
 from UndistortImage import UndistortImage
+import matplotlib.pyplot as plt
 
 def preprocess_data(img_path, name, LUT):
 	im = cv2.imread(os.path.join(img_path, name), 0)
 	BGR_im = cv2.cvtColor(im, cv2.COLOR_BayerGR2BGR)
 	un_im = UndistortImage(BGR_im, LUT)
+	un_im = un_im[200:650,:]
 	h, w = im.shape
 	dim = (int(0.6*w), int(0.6*h))
 	un_im = cv2.resize(un_im, dim)
 
 	return un_im
 
+# def get_feature_matches(img1, img2):
+# 	# Initiate STAR detector
+# 	orb = cv2.ORB_create()
+
+# 	# # find the keypoints with ORB
+# 	# kp = orb.detect(frame, None)
+# 	# print(len(kp))
+
+# 	# # compute the descriptors with ORB
+# 	# kp, des = orb.compute(frame, kp)
+
+# 	img3 = deepcopy(img2)
+
+# 	kp1, des1 = orb.detectAndCompute(img1,None)
+# 	kp2, des2 = orb.detectAndCompute(img2,None)
+
+# 	bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+
+# 	# Match descriptors.
+# 	matches = bf.match(des1,des2)
+
+# 	# Sort them in the order of their distance.
+# 	matches = sorted(matches, key = lambda x:x.distance)
+
+# 	if len(matches) <= 8:
+# 		print("Very few matches found. Aborting!!!")
+# 		exit()
+
+# 	# Draw first 10 matches.
+# 	img3 = cv2.drawMatches(img1,kp1,img2,kp2,matches, img3, flags=2)
+
+
+
+# 	# img = deepcopy(frame)
+# 	# # draw only keypoints location,not size and orientation
+# 	# img = cv2.drawKeypoints(frame, kp, img, color=(0,255,0), flags=0)
+# 	# cv2.imshow("features", img3)
+# 	# if cv2.waitKey(0) & 0xff == 27:
+# 	# 	cv2.destroyAllWindows()
+
+# 	return kp1, kp2, matches
+            
+
 def get_feature_matches(img1, img2):
-	# Initiate STAR detector
-	orb = cv2.ORB_create()
 
-	# # find the keypoints with ORB
-	# kp = orb.detect(frame, None)
-	# print(len(kp))
+	sift = cv2.xfeatures2d.SIFT_create() 
 
-	# # compute the descriptors with ORB
-	# kp, des = orb.compute(frame, kp)
+    # find the keypoints and descriptors with SIFT in current as well as next frame
+	kp1, des1 = sift.detectAndCompute(img1, None)
+	kp2, des2 = sift.detectAndCompute(img2, None)
 
-	img3 = deepcopy(img2)
+	# FLANN parameters
+	FLANN_INDEX_KDTREE = 0
+	index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+	search_params = dict(checks=50)
 
-	kp1, des1 = orb.detectAndCompute(img1,None)
-	kp2, des2 = orb.detectAndCompute(img2,None)
+	flann = cv2.FlannBasedMatcher(index_params,search_params)
+	matches = flann.knnMatch(des1,des2,k=2)
+	
+	# features1 = [] # Variable for storing all the required features from the current frame
+	# features2 = [] # Variable for storing all the required features from the next frame
 
-	bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+	# Ratio test as per Lowe's paper
+	good = []
+	for i,(m,n) in enumerate(matches):
+		if m.distance < 0.5*n.distance:
+			good.append(m)
+	print("gooooooood", len(good))
 
-	# Match descriptors.
-	matches = bf.match(des1,des2)
-
-	# Sort them in the order of their distance.
-	matches = sorted(matches, key = lambda x:x.distance)
-
-	if len(matches) <= 8:
-		print("Very few matches found. Aborting!!!")
-		exit()
-
-	# Draw first 10 matches.
-	img3 = cv2.drawMatches(img1,kp1,img2,kp2,matches, img3, flags=2)
-
-
-
-	# img = deepcopy(frame)
-	# # draw only keypoints location,not size and orientation
-	# img = cv2.drawKeypoints(frame, kp, img, color=(0,255,0), flags=0)
-	cv2.imshow("features", img3)
-	if cv2.waitKey(0) & 0xff == 27:
-		cv2.destroyAllWindows()
-
-	return kp1, kp2, matches
+	return kp1, kp2, good
 
 def get_point(kp1, kp2, match):
 	x1, y1 = kp1[match.queryIdx].pt
@@ -93,7 +124,7 @@ def get_F_util(points):
 
 def get_inliers(kp1, kp2, matches, F):
 	inliers = []
-	err_thresh = 0.05
+	err_thresh = 0.01
 
 	for m in matches:
 		p = get_point(kp1, kp2, m)
@@ -115,7 +146,7 @@ def get_F(kp1, kp2, matches):
 	max_inliers = []
 	F_ = []
 
-	for i in range(100):
+	for i in range(500):
 		idx = np.random.choice(len(matches), 8, replace=False)
 		points = []
 		for i in idx:
@@ -151,14 +182,14 @@ def get_F(kp1, kp2, matches):
 
 def findEssentialMatrix(F, K):
 	E = np.matmul(K.T, np.matmul(F, K))
-	U, S, Vh = np.linalg.svd(E)
-	E = np.matmul(U, np.matmul(np.identity(3), Vh))
+	# U, S, Vh = np.linalg.svd(E)
+	# E = np.matmul(U, np.matmul(np.identity(3), Vh))
 
 	# Correct rank of E
 	U, S, Vh = np.linalg.svd(E)
 	S_ = np.eye(3)
 	for i in range(3):
-		S_[i, i] = S[i]
+		S_[i, i] = 1
 	S_[2, 2] = 0
 
 	E = np.matmul(U, np.matmul(S_, Vh))
@@ -216,11 +247,11 @@ def findCameraPose(E):
 
 	# return [[C1, R1], [C2, R2], [C3, R3], [C4, R4]]
 def cross(u):
-    a1=u[0][0]
-    a2=u[1][0]
-    a3=u[2][0]
+	a1=u[0][0]
+	a2=u[1][0]
+	a3=u[2][0]
     # print(a)
-    return np.array([[0,-a3,a2],[a3,0,-a1],[-a2,a1,0]])
+	return np.array([[0,-a3,a2],[a3,0,-a1],[-a2,a1,0]])
 
 def linear_triangulation(K,P1,P2,points):
 	# print(points[0])
@@ -228,23 +259,24 @@ def linear_triangulation(K,P1,P2,points):
 	pt2 = np.asarray([points[2], points[3],1]).reshape(-1,1)
 	# print(pt1)
 
-	p1 = np.matmul(np.linalg.inv(K),pt1)
-	p2 = np.matmul(np.linalg.inv(K),pt2)
+	# p1 = np.matmul(np.linalg.inv(K),pt1)
+	# p2 = np.matmul(np.linalg.inv(K),pt2)
 
-	cross_1 = cross(p1)
-	cross_2 = cross(p2)
+	cross_1 = cross(pt1)
+	cross_2 = cross(pt2)
 
-	P1 = np.concatenate((P1[:,:3], -np.matmul(P1[:,:3],P1[:,3].reshape(-1,1))),axis=1)
-	P2 = np.concatenate((P2[:,:3], -np.matmul(P2[:,:3],P2[:,3].reshape(-1,1))),axis=1)
+	# P1 = np.concatenate((P1[:,:3], -np.matmul(P1[:,:3],P1[:,3].reshape(-1,1))),axis=1)
+	# P2 = np.concatenate((P2[:,:3], -np.matmul(P2[:,:3],P2[:,3].reshape(-1,1))),axis=1)
 
-	r1 = np.matmul(cross_1,P1)
-	r2 = np.matmul(cross_2,P2)
+	pose1 = np.matmul(cross_1,P1)
+	pose2 = np.matmul(cross_2,P2)
 	# print(pose1)
 	# print(pose2)
 
-	A = np.concatenate((r1,r2),axis=0)
+	# A = np.concatenate((r1,r2),axis=0)
+	A = np.vstack((pose1, pose2))
 	# print(A.shape)
-	U,S,Vh = np.linalg.svd(A)
+	U,S,Vh = np.linalg.svd(A, full_matrices = True)
 	X = Vh[-1,:]
 	# print(X)
 	X = X/X[3]
@@ -275,7 +307,7 @@ def get_correct_pose(points,camera_poses,K):
 	max = 0
 
 	for i in range(4):
-		print(i)
+		# print(i)
 		P = camera_poses[i]
 
 		# print(len(pts_dict[i]))
@@ -295,9 +327,8 @@ def get_correct_pose(points,camera_poses,K):
 
 		Z = np.matmul(r3,np.subtract(pts_list,C))
 		# print("Z", Z.shape)
-		Z = Z>0
-		_,pos = np.where(Z==True)
-		print("Z", pos.shape[0], i)
+		_,pos = np.where(Z>0)
+		# print("Z", pos.shape[0], i)
 		if max < pos.shape[0]:
 			final_pose = P
 			max = pos.shape[0]
@@ -308,6 +339,15 @@ def get_correct_pose(points,camera_poses,K):
 
 
 def main():
+	fig = plt.figure()
+	ax = fig.add_subplot(111)
+
+	# ax.set_xlim(-40,40)
+	# ax.set_ylim(-40,40)
+	xs = []
+	ys = []
+	zs = []
+
 	cur_path = os.path.dirname(os.path.abspath(__file__))
 	img_path = os.path.join(cur_path, 'stereo/centre')
 
@@ -322,12 +362,13 @@ def main():
 	K[1][1] = fy
 	K[1][2] = cy
 	K[2][2] = 1
+	T_prev = np.eye(4)
 
 	prev_frame = []
 	for name in sorted(os.listdir(img_path)):
 		print("frame", count)
 		frame = preprocess_data(img_path, name, LUT)
-		if count == 0:
+		if count <= 18:
 			prev_frame = frame
 			count += 1
 			continue
@@ -336,22 +377,68 @@ def main():
 
 		kp1, kp2, matches = get_feature_matches(prev_frame, frame)
 
-		F,points = get_F(kp1, kp2, matches)
+		F, points = get_F(kp1, kp2, matches)
 		
 		E = findEssentialMatrix(F, K)
 		
 		camera_poses = findCameraPose(E)
+		# print(camera_poses)
 
 		final_pose = get_correct_pose(points,camera_poses,K)
 
 		print("final_pose", final_pose)
+
+		R = final_pose[:,0:3].reshape(3,3)
+		t = final_pose[:,3].reshape(3,1)
+        
+		# if np.linalg.det(R)<0:
+		# 	R = -R
+        
+		# P = np.hstack((R,np.matmul(-R,C)))
+		# P = np.vstack((P,[0,0,0,1]))
+
+		# P0 = np.array([[1,0,0,0],
+  #              [0,1,0,0],
+  #              [0,0,1,0],
+  #              [0,0,0,1]])
+
+		# P = np.matmul(P0,P)
+        
+		# x = P[0,3]
+        
+		# z = P[2,3]
+        
+		# plt.plot(-x,z,'.r')
+
+		# plt.pause(0.01)
 		
 		count += 1 
 
-		if count == 6:
-			break
+		T = np.hstack((R, -t))
+		T = np.vstack((T, np.asarray([0, 0, 0, 1])))
 
-		# images.append(un_im)
+		
+		T = np.matmul(T_prev, T)
+		X = T[:,3]
+
+		xs.append(X[0])
+		ys.append(X[1])
+		zs.append(X[2])
+
+		T_prev = T
+		prev_frame = frame
+
+		ax.scatter(X[0], X[2], s=1, marker='o', color='b')
+		plt.pause(0.01)
+		plt.savefig('Output/frame%03d.png' % count)
+
+	plt.pause(10)
+
+	plt.show()
+
+		# if count == 1000:
+		# 	break
+
 
 
 
