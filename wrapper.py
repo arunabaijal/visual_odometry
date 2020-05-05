@@ -331,7 +331,7 @@ def get_correct_pose(points,camera_poses,K):
 		
 		proj = find_projection_matrix(K, P)
 		res = least_squares(nonlinearerror, x0=np.asarray(pts_dict[i]).flatten(), method="dogbox", args=(proj, points),
-							max_nfev=2000)
+							max_nfev=8000)
 		# print("Non linear result", res)
 		pts_list = np.reshape(res.x, np.asarray(pts_dict[i]).shape)
 		
@@ -475,7 +475,7 @@ def main():
 
 		ax.scatter(X[0], X[2], s=1, marker='o', color='b')
 		plt.pause(0.01)
-		plt.savefig('Output/frame%03d.png' % count)
+		# plt.savefig('Output/frame%03d.png' % count)
 
 		# if count == 3:
 		# 	print("why you no breakkkkkkkkkkk")
