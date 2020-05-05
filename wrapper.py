@@ -6,15 +6,17 @@ from copy import deepcopy
 from ReadCameraModel import ReadCameraModel
 from UndistortImage import UndistortImage
 import matplotlib.pyplot as plt
+import math
 
 def preprocess_data(img_path, name, LUT):
 	im = cv2.imread(os.path.join(img_path, name), 0)
 	BGR_im = cv2.cvtColor(im, cv2.COLOR_BayerGR2BGR)
 	un_im = UndistortImage(BGR_im, LUT)
+	un_im = cv2.cvtColor(un_im, cv2.COLOR_BGR2GRAY)
 	un_im = un_im[200:650,:]
-	h, w = im.shape
-	dim = (int(0.6*w), int(0.6*h))
-	un_im = cv2.resize(un_im, dim)
+	# h, w = im.shape
+	# dim = (int(0.6*w), int(0.6*h))
+	# un_im = cv2.resize(un_im, dim)
 
 	return un_im
 
@@ -85,7 +87,7 @@ def get_feature_matches(img1, img2):
 	for i,(m,n) in enumerate(matches):
 		if m.distance < 0.5*n.distance:
 			good.append(m)
-	print("gooooooood", len(good))
+	# print("gooooooood", len(good))
 
 	return kp1, kp2, good
 
@@ -103,7 +105,7 @@ def get_F_util(points):
 
 	A = np.asarray(A)
 
-	U, S, Vh = np.linalg.svd(A)
+	U, S, Vh = np.linalg.svd(A, full_matrices = True)
 	# print(S.shape)
 
 	f = Vh[-1,:]
@@ -146,7 +148,7 @@ def get_F(kp1, kp2, matches):
 	max_inliers = []
 	F_ = []
 
-	for i in range(500):
+	for i in range(50):
 		idx = np.random.choice(len(matches), 8, replace=False)
 		points = []
 		for i in idx:
@@ -186,10 +188,10 @@ def findEssentialMatrix(F, K):
 	# E = np.matmul(U, np.matmul(np.identity(3), Vh))
 
 	# Correct rank of E
-	U, S, Vh = np.linalg.svd(E)
+	U, S, Vh = np.linalg.svd(E, full_matrices = True)
 	S_ = np.eye(3)
-	for i in range(3):
-		S_[i, i] = 1
+	# for i in range(3):
+	# 	S_[i, i] = 1
 	S_[2, 2] = 0
 
 	E = np.matmul(U, np.matmul(S_, Vh))
@@ -198,7 +200,7 @@ def findEssentialMatrix(F, K):
 
 
 def findCameraPose(E):
-	U, D, Vt = np.linalg.svd(E)
+	U, D, Vt = np.linalg.svd(E, full_matrices = True)
 	W = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
 	C1 = U[:, 2]
 	R1 = np.matmul(U, np.matmul(W, Vt))
@@ -282,6 +284,21 @@ def linear_triangulation(K,P1,P2,points):
 	X = X/X[3]
 	return X
 
+def euler_angles(R) :
+ 
+	sy = math.sqrt(R[0,0] * R[0,0] +  R[1,0] * R[1,0])
+	singular = sy < 1e-6
+	if  not singular :
+		x = math.atan2(R[2,1] , R[2,2])
+		y = math.atan2(-R[2,0], sy)
+		z = math.atan2(R[1,0], R[0,0])
+	else :
+		x = math.atan2(-R[1,2], R[1,1])
+		y = math.atan2(-R[2,0], sy)
+		z = 0
+ 
+	return np.array([x*180/math.pi, y*180/math.pi, z*180/math.pi])
+
 
 def get_correct_pose(points,camera_poses,K):
 	P1 = np.array([[1,0,0,0],
@@ -304,43 +321,53 @@ def get_correct_pose(points,camera_poses,K):
 	# print(len(pts_dict))
 
 	# print(len(pts_dict[0]))
-	max = 0
+	c = 0
+	flag = 0
 
 	for i in range(4):
 		# print(i)
 		P = camera_poses[i]
+		angles = euler_angles(P[:,:3])
+		if angles[0] < 50 and angles[0] > -50 and angles[2] < 50 and angles[2] > -50:
+			flag = 1
+			# print(len(pts_dict[i]))
+			# print("P", P)
+			r3 = P[2,0:3]
+			r3 = np.reshape(r3,(1,3))
+			# print("r3", r3.shape)
 
-		# print(len(pts_dict[i]))
-		# print("P", P)
-		r3 = P[2,0:3]
-		r3 = np.reshape(r3,(1,3))
-		# print("r3", r3.shape)
+			C = P[:,3]
+			C = np.reshape(C,(3,1))
+			# print(C.shape)
 
-		C = P[:,3]
-		C = np.reshape(C,(3,1))
-		# print(C.shape)
+			pts_list = np.asarray(pts_dict[i])
+			# print(pts_list.shape)
+			pts_list = pts_list[:,0:3].T
+			# print(pts_list.shape)
 
-		pts_list = np.asarray(pts_dict[i])
-		# print(pts_list.shape)
-		pts_list = pts_list[:,0:3].T
-		# print(pts_list.shape)
+			Z = np.matmul(r3,np.subtract(pts_list,C))
+			# print("Z", Z.shape)
+			_,pos = np.where(Z>0)
+			# print("Z", pos.shape[0], i)
+			if c < pos.shape[0]:
+				final_pose = P
+				c = pos.shape[0]
+	if flag == 1:
+		print("flaaaaaaaag", flag)
+		return final_pose,flag
 
-		Z = np.matmul(r3,np.subtract(pts_list,C))
-		# print("Z", Z.shape)
-		_,pos = np.where(Z>0)
-		# print("Z", pos.shape[0], i)
-		if max < pos.shape[0]:
-			final_pose = P
-			max = pos.shape[0]
-
-	return final_pose
-
-
+	else: 
+		print("flaaaaaaaaaag", flag)
+		return P1, flag 
 
 
 def main():
 	fig = plt.figure()
 	ax = fig.add_subplot(111)
+
+	prev_pose = np.array([[1, 0, 0, 0],
+				  [0, 1, 0, 0],
+				  [0, 0, 1, 0]], dtype = np.float32)
 
 	# ax.set_xlim(-40,40)
 	# ax.set_ylim(-40,40)
@@ -384,7 +411,17 @@ def main():
 		camera_poses = findCameraPose(E)
 		# print(camera_poses)
 
-		final_pose = get_correct_pose(points,camera_poses,K)
+		final_pose, flag = get_correct_pose(points,camera_poses,K)
+
+		# print("final_pose before ", final_pose)
+
+		if flag ==0:
+			final_pose = prev_pose
+		else:
+			final_pose = final_pose
+
+		prev_pose = final_pose
+
 
 		print("final_pose", final_pose)
 
@@ -432,12 +469,15 @@ def main():
 		plt.pause(0.01)
 		plt.savefig('Output/frame%03d.png' % count)
 
+		# if count == 3:
+		# 	print("why you no breakkkkkkkkkkk")
+		# 	break
+
 	plt.pause(10)
 
 	plt.show()
 
-		# if count == 1000:
-		# 	break
+
 
 
 
