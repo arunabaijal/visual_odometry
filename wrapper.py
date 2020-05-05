@@ -6,6 +6,7 @@ from copy import deepcopy
 from ReadCameraModel import ReadCameraModel
 from UndistortImage import UndistortImage
 import matplotlib.pyplot as plt
+from scipy.optimize import least_squares
 
 def preprocess_data(img_path, name, LUT):
 	im = cv2.imread(os.path.join(img_path, name), 0)
@@ -440,6 +441,41 @@ def main():
 		# 	break
 
 
+"""
+
+		proj = find_projection_matrix(K, P)
+		
+		# print("final_pose", final_pose)
+		# print("final_points", final_points)
+		# print("Projection matrix", )
+		# x0 = []
+		# P1 = np.array([[1, 0, 0, 0],
+		# 			   [0, 1, 0, 0],
+		# 			   [0, 0, 1, 0]])
+		# for j in range(points.shape[0]):
+		# 	pt = linear_triangulation(K, P1, final_pose, points[j])
+		# 	x0.append(pt)
+		# print(np.asarray(x0).shape)
+		# print("Before", pts_dict[i])
+		res = least_squares(nonlinearerror, x0=np.asarray(pts_dict[i]).flatten(), method="dogbox", args=(proj, points), max_nfev=2000)
+		# print("Non linear result", res)
+		pts_list = np.reshape(res.x, np.asarray(pts_dict[i]).shape)
+"""
+
+def find_projection_matrix(K, final_pose):
+	return np.matmul(K, final_pose)
+
+
+def nonlinearerror(X, P, points):
+	X = X.reshape((len(points), 4))
+	X_homo = X.T
+	# X = X[:, :3].T
+	s = np.square(np.asarray(points[:, 0]) - (np.matmul(P[0, :], X_homo) / np.matmul(P[2, :], X_homo))) + np.square(
+		np.asarray(points[:, 1]) - (np.matmul(P[1, :], X_homo) / np.matmul(P[2, :], X_homo)))
+	s = s + np.square(np.asarray(points[:, 2]) - (np.matmul(P[0, :], X_homo) / np.matmul(P[2, :], X_homo))) + np.square(
+		np.asarray(points[:, 3]) - (np.matmul(P[1, :], X_homo) / np.matmul(P[2, :], X_homo)))
+	
+	return np.asarray(s, dtype=np.float32)
 
 
 
