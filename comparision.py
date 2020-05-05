@@ -14,7 +14,7 @@ def preprocess_data(img_path, name, LUT):
 	im = cv2.imread(os.path.join(img_path, name), 0)
 	BGR_im = cv2.cvtColor(im, cv2.COLOR_BayerGR2BGR)
 	un_im = UndistortImage(BGR_im, LUT)
-	un_im = un_im[200:650, :]
+	# un_im = un_im[200:650, :]
 
 	# cv2.imshow("image", un_im)
 	# if cv2.waitKey(0) & 0xff == 27:
@@ -35,10 +35,10 @@ def get_feature_matches(img1, img2):
 	kp1, des1 = orb.detectAndCompute(img1,None)
 	kp2, des2 = orb.detectAndCompute(img2,None)
 
-	# bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+	bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
 
-	# # Match descriptors.
-	# matches = bf.match(des1,des2)
+	# Match descriptors.
+	matches = bf.match(des1,des2)
 	
 	# FLANN_INDEX_LSH = 6
 
@@ -70,21 +70,21 @@ def get_feature_matches(img1, img2):
 
 	# matches = good
 
-	bf = cv2.BFMatcher()
-	matches1 = bf.knnMatch(des1,des2, k=2)
+	# bf = cv2.BFMatcher()
+	# matches1 = bf.knnMatch(des1,des2, k=2)
 
-	# Apply ratio test
-	good = []
-	for m,n in matches1:
-	    if m.distance < 0.5*n.distance:
-	        good.append(m)
+	# # Apply ratio test
+	# good = []
+	# for m,n in matches1:
+	#     if m.distance < 0.6*n.distance:
+	#         good.append(m)
 
-	matches = good
+	# matches = good
 
 	# Sort them in the order of their distance.
 	matches = sorted(matches, key = lambda x:x.distance)
-	# if len(matches) > 100:
-	# 	matches = matches[0:100]
+	# if len(matches) > 200:
+	# 	matches = matches[0:200]
 
 	if len(matches) <= 8:
 		print("Very few matches found. Aborting!!!")
